@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="synthApp">
+<head>
+  <meta charset="UTF-8">
+  <title>Music Synthesiser</title>
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #1DB954, #1ED760);
+      color: #fff;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 2.8em;
+      padding: 20px 0;
+      margin: 0;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .controls {
+      margin: 20px auto;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      display: inline-block;
+      backdrop-filter: blur(5px);
+      color: #fff;
+      font-size: 1.1em;
+    }
+
+    .piano-wrapper {
+      position: relative;
+      max-width: 100%;
+      margin: 30px auto;
+      overflow-x: auto;
+      padding: 10px;
+    }
+
+    .piano {
+      position: relative;
+      display: flex;
+      width: fit-content;
+      margin: 0 auto;
+      height: 250px;
+    }
+
+    .white-key, .black-key {
+      position: relative;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 16px;
+      padding: 10px 0;
+    }
+
+    .white-key {
+      width: 60px;
+      height: 250px;
+      background: linear-gradient(to bottom, #fdfdfd 0%, #eaeaea 100%);
+      z-index: 1;
+    }
+
+    .white-key.active {
+      background-color: #00e5ff;
+    }
+
+    .black-key {
+      width: 40px;
+      height: 160px;
+      background: #000;
+      color: white;
+      position: absolute;
+      top: 0;
+      z-index: 2;
+    }
+
+    .black-key.active {
+      background-color: #00e5ff;
+      color: black;
+    }
+
+    .note-label {
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .key-label {
+      font-size: 12px;
+      color: #555;
+    }
+
+    button {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      background: #ffffff33;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #ffffff55;
+    }
+  </style>
+</head>
+<body ng-controller="MainCtrl">
+  <h1>Music Synthesiser</h1>
+
+  <div class="controls">
+    <label for="waveform">Select Waveform: </label>
+    <select id="waveform" ng-model="waveform">
+      <option value="sine">Sine</option>
+      <option value="square">Square</option>
+      <option value="triangle">Triangle</option>
+      <option value="sawtooth">Sawtooth</option>
+    </select>
+    <br><br>
+    <button ng-click="startRecording()">Start Recording</button>
+    <button ng-click="stopRecording()">Stop Recording</button>
+  </div>
+
+  <div class="piano-wrapper">
+    <div id="react-root" class="piano"></div>
+  </div>
+
+  <!-- Recorder Script -->
+  <script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    async function initRecorder() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = e => {
+        audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        audioChunks = [];
+
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        fetch('save_audio.php', {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.text())
+        .then(msg => alert(msg))
+        .catch(err => alert("Upload failed"));
+      };
+    }
+  </script>
+
+  <!-- AngularJS Controller -->
+  <script>
+    angular.module('synthApp', [])
+      .controller('MainCtrl', function($scope) {
+        $scope.waveform = 'sine';
+        Object.defineProperty(window, 'waveform', {
+          get: () => $scope.waveform
+        });
+
+        $scope.startRecording = async function () {
+          if (!mediaRecorder) await initRecorder();
+          audioChunks = [];
+          mediaRecorder.start();
+          alert("Recording started!");
+        };
+
+        $scope.stopRecording = function () {
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            alert("Recording stopped. Uploading...");
+          }
+        };
+      });
+  </script>
+
+  <!-- Piano Keys Script -->
+  <script type="text/babel">
+    const whiteKeyWidth = 60;
+    const blackKeyWidth = 40;
+
+    const keys = [
+      { key: 'A', note: 'C', type: 'white' },
+      { key: 'W', note: 'C#', type: 'black', offset: 0 },
+      { key: 'S', note: 'D', type: 'white' },
+      { key: 'E', note: 'D#', type: 'black', offset: 1 },
+      { key: 'D', note: 'E', type: 'white' },
+      { key: 'F', note: 'F', type: 'white' },
+      { key: 'T', note: 'F#', type: 'black', offset: 3 },
+      { key: 'G', note: 'G', type: 'white' },
+      { key: 'Y', note: 'G#', type: 'black', offset: 4 },
+      { key: 'H', note: 'A', type: 'white' },
+      { key: 'U', note: 'A#', type: 'black', offset: 5 },
+      { key: 'J', note: 'B', type: 'white' },
+      { key: 'K', note: 'C2', type: 'white' },
+      { key: 'O', note: 'C#2', type: 'black', offset: 7 },
+      { key: 'L', note: 'D2', type: 'white' },
+      { key: 'P', note: 'D#2', type: 'black', offset: 8 },
+      { key: ';', note: 'E2', type: 'white' },
+      { key: "'", note: 'F2', type: 'white' },
+      { key: ']', note: 'F#2', type: 'black', offset: 11 }
+    ];
+
+    class Piano extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { activeKeys: new Set() };
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        this.oscillators = {};
+      }
+
+      keyMap = {
+        A: 261.63, W: 277.18, S: 293.66, E: 311.13,
+        D: 329.63, F: 349.23, T: 369.99, G: 392.00,
+        Y: 415.30, H: 440.00, U: 466.16, J: 493.88,
+        K: 523.25, O: 554.37, L: 587.33, P: 622.25,
+        ";": 659.25, "'": 698.46, "]": 739.99
+      };
+
+      playNote = (key) => {
+        if (!this.keyMap[key]) return;
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        osc.type = window.waveform || 'sine';
+        osc.frequency.value = this.keyMap[key];
+        osc.connect(gain);
+        gain.connect(this.audioCtx.destination);
+        osc.start();
+        this.oscillators[key] = { osc, gain };
+        gain.gain.setValueAtTime(1, this.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 1.2);
+        osc.stop(this.audioCtx.currentTime + 1.2);
+      }
+
+      stopNote = (key) => {
+        delete this.oscillators[key];
+      }
+
+      componentDidMount() {
+        window.addEventListener('keydown', this.handleKeyDown);
+        window.addEventListener('keyup', this.handleKeyUp);
+      }
+
+      componentWillUnmount() {
+        window.removeEventListener('keydown', this.handleKeyDown);
+        window.removeEventListener('keyup', this.handleKeyUp);
+      }
+
+      handleKeyDown = (e) => {
+        const key = e.key.toUpperCase();
+        if (!this.state.activeKeys.has(key) && this.keyMap[key]) {
+          this.playNote(key);
+          this.setState(prev => ({
+            activeKeys: new Set(prev.activeKeys).add(key)
+          }));
+        }
+      }
+
+      handleKeyUp = (e) => {
+        const key = e.key.toUpperCase();
+        if (this.state.activeKeys.has(key)) {
+          this.stopNote(key);
+          this.setState(prev => {
+            const updated = new Set(prev.activeKeys);
+            updated.delete(key);
+            return { activeKeys: updated };
+          });
+        }
+      }
+
+      render() {
+        const whiteKeys = keys.filter(k => k.type === 'white');
+        const blackKeys = keys.filter(k => k.type === 'black');
+
+        return (
+          <div style={{ position: 'relative', display: 'flex' }}>
+            {whiteKeys.map((k, i) => (
+              <div key={k.key}
+                   className={`white-key ${this.state.activeKeys.has(k.key) ? 'active' : ''}`}
+                   style={{ width: `${whiteKeyWidth}px` }}>
+                <div className="note-label">{k.note}</div>
+                <div className="key-label">{k.key}</div>
+              </div>
+            ))}
+            {blackKeys.map((k) => (
+              <div key={k.key}
+                   className={`black-key ${this.state.activeKeys.has(k.key) ? 'active' : ''}`}
+                   style={{
+                     left: `${(k.offset + 1) * whiteKeyWidth - blackKeyWidth / 2}px`,
+                     width: `${blackKeyWidth}px`
+                   }}>
+                <div className="note-label">{k.note}</div>
+                <div className="key-label">{k.key}</div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+    }
+
+    ReactDOM.render(<Piano />, document.getElementById('react-root'));
+  </script>
+</body>
+</html>
